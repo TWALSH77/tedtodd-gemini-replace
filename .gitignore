@@ -1,0 +1,21 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Envs / secrets
+.env
+.python-version
+
+# Local data and large assets (not tracked)
+data/
+outputs/
+tedtodd-photo-bank/
+tedtodd-photo-codebase/
+
+# Streamlit & tooling
+.streamlit/
+.DS_Store
+
+
