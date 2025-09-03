@@ -8,37 +8,40 @@ from google.genai import types
 
 # Keep this file focused and < 200 lines; single responsibility: programmatic generation
 
-INSTRUCTION_TEXT = """Replace ONLY the masked floor in this room with the provided reference floor.
+INSTRUCTION_TEXT = """SYSTEM — UNIVERSAL FLOOR REPLACEMENT (Room → Target Floor)
 
+GOAL
+Replace ONLY the pixels inside FLOOR_MASK in ROOM_IMAGE with the TARGET_FLOOR product so the final image is seamless, photorealistic, and physically consistent with the original scene.
+
+INPUTS
+- ROOM_IMAGE: the original interior photo.
+- FLOOR_MASK: binary mask; 1 = floor region to replace, 0 = everything else. The edit scope is strictly limited to this mask.
+- REFERENCE_IMAGES: one or more target floor references (e.g., swatch, product close-ups, installed photos).
+- PRODUCT_METADATA (optional JSON): may include { pattern, plank_width_mm, tile_size_mm, gloss_level, color_tags, grain_direction_hint, bevel/grout width, orientation_deg, tone/warmth notes }.
+
+EDIT SCOPE (STRICT)
+- Modify ONLY pixels where FLOOR_MASK=1; no changes outside the mask (walls, skirting/trim, furniture, rugs, reflections on non-floor surfaces, etc.).
+- Preserve all occlusions: objects that overlap the floor remain unchanged above the new floor.
+- Edges at skirting/thresholds must be clean, without halos, bleeding, or misalignment.
+
+Replace ONLY the masked floor in this room with the provided reference floor.
 Do not introduce new colours, patterns, or furniture.
 Ensure the floor looks natural, seamless, and photorealistic.
-
-# PRODUCT (STRAIGHT PLANK — SUPERWIDE / European Oak)
-- Species: European Oak
-- Finish: Burnished Hardwax Oil Matt
-- Surface: Brushed
-- Edge: Beveled Edges
-- Layout for this render: STRAIGHT PLANK (no chevron/herringbone/panels)
-- Board width: use a realistic value from the spec ranges; KEEP TRUE SCALE across the floor plane.
-- Board length: random lengths within the spec; stagger end joints naturally.
-
-# COLOUR FIDELITY (HIGHEST PRIORITY — STRICT)
-- MATCH the product COLOUR from REFERENCE_IMAGE_1 EXACTLY (hue, saturation, brightness, warmth).
-- Do NOT lighten, darken, or shift towards red/yellow unless present in the reference.
-- Preserve room lighting/shadows by overlaying them on the CORRECT reference colour.
-- Do NOT change white balance or colours outside the mask.
-
-# OUTPUT REQUIREMENTS
-1) Replace ONLY the floor region with straight planks at true scale.
-2) Preserve original lighting, shadows, reflections and all occlusions from furniture/objects.
-3) Keep walls, skirting and all non-floor elements identical and sharp.
-4) Produce a seamless, photorealistic floor with natural joints and subtle bevels; avoid tiling artefacts.
-
-# FAILURE MODES TO AVOID
-- Do NOT edit outside the masked region.
-- Do NOT introduce chevron/herringbone/panel patterns.
-- Do NOT alter global colour/contrast of the room.
-- Do NOT miniaturise or overscale planks relative to true scale.
+COLOUR FIDELITY (HIGHEST PRIORITY — STRICT)
+MATCH the product COLOUR from REFERENCE_IMAGE_1 EXACTLY (hue, saturation, brightness, warmth).
+Do NOT lighten, darken, or shift towards red/yellow unless present in the reference.
+Preserve room lighting/shadows by overlaying them on the CORRECT reference colour.
+Do NOT change white balance or colours outside the mask.
+OUTPUT REQUIREMENTS
+Replace ONLY the floor region with straight planks at true scale.
+Preserve original lighting, shadows, reflections and all occlusions from furniture/objects.
+Keep walls, skirting and all non-floor elements identical and sharp.
+Produce a seamless, photorealistic floor with natural joints and subtle bevels; avoid tiling artefacts.
+FAILURE MODES TO AVOID
+Do NOT edit outside the masked region.
+Do NOT introduce chevron/herringbone/panel patterns.
+Do NOT alter global colour/contrast of the room.
+Do NOT miniaturise or overscale planks relative to true scale.
 """
 
 
@@ -64,6 +67,7 @@ class FloorReplaceGenerator:
         model_name: str = "gemini-2.5-flash-image-preview",
         temperature: float = 0.1,
         top_p: float = 0.5,
+        seed: Optional[int] = None,
     ) -> None:
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
         if not self.api_key:
@@ -72,6 +76,7 @@ class FloorReplaceGenerator:
         self.model_name = model_name
         self.temperature = temperature
         self.top_p = top_p
+        self.seed = seed
 
     def generate_single_ref(
         self,
@@ -88,9 +93,13 @@ class FloorReplaceGenerator:
         RETURNS: list of (mime_type, data) results; may include multiple images from stream.
         """
         parts: List[types.Part] = []
+        # Explicitly tag parts to align with prompt references
+        parts.append(types.Part.from_text(text="BASE_IMAGE"))
         parts.append(_part_from_bytes(room_bytes, room_mime))
         if mask_bytes and mask_mime:
+            parts.append(types.Part.from_text(text="MASK_IMAGE"))
             parts.append(_part_from_bytes(mask_bytes, mask_mime))
+        parts.append(types.Part.from_text(text="REFERENCE_IMAGE_1"))
         parts.append(_part_from_bytes(reference_bytes, reference_mime))
         parts.append(types.Part.from_text(text=instruction_text))
 
@@ -99,6 +108,7 @@ class FloorReplaceGenerator:
             temperature=self.temperature,
             top_p=self.top_p,
             response_modalities=["IMAGE", "TEXT"],
+            seed=self.seed,
         )
 
         outputs: List[Tuple[str, bytes]] = []

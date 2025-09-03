@@ -13,6 +13,7 @@ data/
 outputs/
 tedtodd-photo-bank/
 tedtodd-photo-codebase/
+tedtodd-photo-roomshots/
 
 # Streamlit & tooling
 .streamlit/
