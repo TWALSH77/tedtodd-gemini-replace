@@ -101,7 +101,7 @@ def render_gallery(products: List[str], selected: str | None) -> str | None:
             url = s3_object_url(name)
             thumb = make_thumbnail_bytes_from_url(url)
             with cols[c]:
-                st.image(thumb, caption=None, use_column_width=True)
+                st.image(thumb, caption=None, use_container_width=True)
                 is_current = selected is not None and name == selected
                 label = f"✅ {name}" if is_current else name
                 st.caption(label)
@@ -116,6 +116,30 @@ def main():
     st.set_page_config(page_title="TedTodd MVP", layout="wide")
     st.title("TedTodd Floor Replace - MVP")
     st.caption("Streamlit-only app (calls Gemini directly)")
+
+    # Simple password gate (secrets > env > default)
+    expected_password = None
+    try:
+        expected_password = st.secrets.get("app", {}).get("password")  # type: ignore[attr-defined]
+    except Exception:
+        expected_password = os.environ.get("APP_PASSWORD")
+    if not expected_password:
+        expected_password = "tedtoddswap"
+
+    if "authed" not in st.session_state:
+        st.session_state["authed"] = False
+
+    if not st.session_state["authed"]:
+        with st.form("login", clear_on_submit=False):
+            pw = st.text_input("Password", type="password")
+            submit = st.form_submit_button("Enter")
+        if submit:
+            if pw == expected_password:
+                st.session_state["authed"] = True
+                st.rerun()
+            else:
+                st.error("Incorrect password")
+        st.stop()
 
     # Key helper and check
     def _get_api_key() -> str | None:
