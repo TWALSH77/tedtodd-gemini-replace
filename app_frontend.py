@@ -6,9 +6,11 @@ import random
 
 import requests
 import streamlit as st
+from streamlit import components
 from PIL import Image
 Image.MAX_IMAGE_PIXELS = 300_000_000  # Avoid PIL DecompressionBombWarning for large refs
 import hashlib
+import base64
 
 from google.genai import types
 from floor_replace.generator import FloorReplaceGenerator, _guess_mime, INSTRUCTION_TEXT
@@ -34,6 +36,42 @@ DEFAULT_PRODUCT_FILES = [
 def _s3_key_for(filename: str) -> str:
     prefix = (S3_PREFIX.strip("/") + "/") if S3_PREFIX and not S3_PREFIX.endswith("/") else S3_PREFIX
     return f"{prefix}{filename}" if prefix else filename
+
+
+def _to_data_url(img: Image.Image) -> str:
+    buf = BytesIO()
+    img.save(buf, format="JPEG", quality=95)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def _build_overlay_html(before_url: str, after_url: str, elem_id: str) -> str:
+    # Pure HTML/CSS/JS overlay with clip-path and a draggable range
+    return f"""
+<div style=\"max-width: 1024px; margin: 0 auto; user-select:none;\">
+  <div id=\"wrap-{elem_id}\" style=\"position:relative; width:100%; overflow:hidden; border-radius:12px; border:1px solid #ddd;\">
+    <img id=\"before-{elem_id}\" src=\"{before_url}\" style=\"width:100%; display:block;\">
+    <img id=\"after-{elem_id}\"  src=\"{after_url}\"  style=\"width:100%; display:block; position:absolute; top:0; left:0; clip-path: inset(0 0 0 50%);\">
+    <input id=\"slider-{elem_id}\" type=\"range\" min=\"0\" max=\"100\" value=\"50\"
+           style=\"position:absolute; left:0; right:0; bottom:10px; width:100%; -webkit-appearance:none; height:4px; background:#ddd; border-radius:2px;\">
+    <div id=\"handle-{elem_id}\" style=\"position:absolute; top:0; bottom:0; left:50%; width:2px; background:white; box-shadow:0 0 0 2px rgba(0,0,0,.2); pointer-events:none;\"></div>
+    <div style=\"position:absolute; top:10px; left:10px; background:rgba(0,0,0,.55); color:white; padding:6px 10px; border-radius:8px; font:600 12px/1.2 system-ui;\">Original</div>
+    <div style=\"position:absolute; top:10px; right:10px; background:rgba(0,0,0,.55); color:white; padding:6px 10px; border-radius:8px; font:600 12px/1.2 system-ui;\">Generated</div>
+  </div>
+</div>
+<script>
+(function(){{
+  const slider = document.getElementById('slider-{elem_id}');
+  const after  = document.getElementById('after-{elem_id}');
+  const handle = document.getElementById('handle-{elem_id}');
+  function update(v) {{
+    after.style.clipPath = `inset(0 0 0 ${{100 - v}}%)`;
+    handle.style.left = v + '%';
+  }}
+  slider.addEventListener('input', e => update(e.target.value));
+  update(slider.value);
+}})();
+</script>
+"""
 
 
 def s3_object_url(filename: str) -> str:
@@ -101,7 +139,7 @@ def render_gallery(products: List[str], selected: str | None) -> str | None:
             url = s3_object_url(name)
             thumb = make_thumbnail_bytes_from_url(url)
             with cols[c]:
-                st.image(thumb, caption=None, use_container_width=True)
+                st.image(thumb, caption=None, use_column_width=True)
                 is_current = selected is not None and name == selected
                 label = f"✅ {name}" if is_current else name
                 st.caption(label)
@@ -137,7 +175,7 @@ def main():
             if pw == expected_password:
                 st.session_state["authed"] = True
                 st.rerun()
-            else:
+        else:
                 st.error("Incorrect password")
         st.stop()
 
@@ -307,6 +345,23 @@ def main():
                     })
                 for idx, (mime, data) in enumerate(outputs):
                     st.image(data, caption=f"Output {idx}")
+                    with st.expander("Experimental: Before/After slider", expanded=False):
+                        try:
+                            # Ensure same dimensions
+                            with Image.open(BytesIO(room_bytes)) as b0:
+                                b_img = b0.convert("RGB")
+                                bw, bh = b_img.size
+                            with Image.open(BytesIO(data)) as a0:
+                                a_img = a0.convert("RGB").resize((bw, bh))
+                            before_url = _to_data_url(b_img)
+                            after_url = _to_data_url(a_img)
+                            elem_id = f"cmp_{idx}"
+                            components.v1.html(
+                                _build_overlay_html(before_url, after_url, elem_id),
+                                height=700,
+                            )
+                        except Exception as _e:
+                            st.info(f"Preview not available: {_e}")
 
     st.divider()
     st.subheader("Remix mode")
