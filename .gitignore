@@ -6,7 +6,7 @@ __pycache__/
 
 # Envs / secrets
 .env
-.python-version
+
 
 # Local data and large assets (not tracked)
 data/
@@ -14,6 +14,9 @@ outputs/
 tedtodd-photo-bank/
 tedtodd-photo-codebase/
 tedtodd-photo-roomshots/
+tedtodd-photo-bank-crops/
+tedtodd-photo-bank-panels/
+prompts/
 
 # Streamlit & tooling
 .streamlit/

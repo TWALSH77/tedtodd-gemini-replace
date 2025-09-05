@@ -8,42 +8,70 @@ from google.genai import types
 
 # Keep this file focused and < 200 lines; single responsibility: programmatic generation
 
-INSTRUCTION_TEXT = """SYSTEM — UNIVERSAL FLOOR REPLACEMENT (Room → Target Floor)
+INSTRUCTION_TEXT = """{
+  "task": "universal_wood_floor_replacement",
+  "goal": "Do not generate a new floor. Take the REFERENCE_IMAGE exactly as provided and project it into the FLOOR_MASK region of the ROOM_IMAGE. The only valid action is to map/tile/warp this exact image so it fits the room’s perspective, scale, and lighting. Nothing else is allowed.",
+  "inputs": {
+    "room_image": "original interior photo",
+    "floor_mask": "binary mask (1 = floor region to replace, 0 = everything else)",
+    "reference_image": "high-quality scan of the wooden floor (this IS the floor to apply, not inspiration)",
+    "product_metadata": {
+      "optional": 
+      "examples": {
+        "plank_width_mm":
+        "tile_size_mm":
+        "gloss_level": "
+        "tone": "warm ",
+        "grain_direction_hint": 
+        "orientation_deg": 0
+      }
+    }
+  },
+  "rules": {
+    "fundamental": [
+      "Do NOT invent, generate, or hallucinate any floor texture.",
+      "The REFERENCE_IMAGE must be used directly — no substitutes, no approximations.",
+      "Apply only geometric and photometric adjustments (warp, tile, scale, blend for lighting)."
+    ],
+    "strict_scope": [
+      "Modify ONLY pixels where FLOOR_MASK = 1.",
+      "Do not touch walls, skirting, furniture, rugs, reflections, or any non-floor surfaces.",
+      "Preserve occlusions: objects above the floor remain unchanged on top of the new surface.",
+      "Edges at skirting/thresholds must be sharp, aligned, and free of halos or bleed."
+    ],
+    "colour_texture_fidelity": [
+      "Colours, tone, grain, and texture must match the REFERENCE_IMAGE exactly (1:1).",
+      "No colour shifts (hue, saturation, brightness, warmth) unless present in the reference.",
+      "No invented grain, plank lines, or surface details.",
+      "Overlay and preserve natural room lighting/shadows from the ROOM_IMAGE onto the new floor.",
+      "Do not alter global white balance or colours outside the mask."
+    ]
+  },
+  "output": {
+    "appearance": "The REFERENCE_IMAGE appears as the installed floor in the room.",
+    "quality": "Seamless, natural, photorealistic result that looks physically consistent with the scene.",
+    "operations": [
+      "Tile or repeat REFERENCE_IMAGE only as needed to cover the masked area.",
+      "Warp and align to correct room perspective and geometry.",
+      "Scale floor features according to product_metadata (if provided).",
+      "Blend room lighting and shadows realistically onto the new floor.",
+      "Preserve reflections and occlusions from ROOM_IMAGE."
+    ]
+  },
+  "failure_modes": [
+    "❌ Do not generate or invent wood textures.",
+    "❌ Do not approximate the reference — the REFERENCE_IMAGE itself must be used.",
+    "❌ Do not alter or distort colours, contrast, or brightness of the reference.",
+    "❌ Do not change plank layout, pattern, or style beyond what exists in the reference.",
+    "❌ Do not overscale or underscale the texture unrealistically.",
+    "❌ Do not edit any pixels outside the FLOOR_MASK region.",
+    "❌ Do not change global image balance, colour, or exposure."
+  ]
+}
 
-GOAL
-Replace ONLY the pixels inside FLOOR_MASK in ROOM_IMAGE with the TARGET_FLOOR product so the final image is seamless, photorealistic, and physically consistent with the original scene.
 
-INPUTS
-- ROOM_IMAGE: the original interior photo.
-- FLOOR_MASK: binary mask; 1 = floor region to replace, 0 = everything else. The edit scope is strictly limited to this mask.
-- REFERENCE_IMAGES: one or more target floor references (e.g., swatch, product close-ups, installed photos).
-- PRODUCT_METADATA (optional JSON): may include { pattern, plank_width_mm, tile_size_mm, gloss_level, color_tags, grain_direction_hint, bevel/grout width, orientation_deg, tone/warmth notes }.
 
-EDIT SCOPE (STRICT)
-- Modify ONLY pixels where FLOOR_MASK=1; no changes outside the mask (walls, skirting/trim, furniture, rugs, reflections on non-floor surfaces, etc.).
-- Preserve all occlusions: objects that overlap the floor remain unchanged above the new floor.
-- Edges at skirting/thresholds must be clean, without halos, bleeding, or misalignment.
-
-Replace ONLY the masked floor in this room with the provided reference floor.
-Do not introduce new colours, patterns, or furniture.
-Ensure the floor looks natural, seamless, and photorealistic.
-COLOUR FIDELITY (HIGHEST PRIORITY — STRICT)
-MATCH the product COLOUR from REFERENCE_IMAGE_1 EXACTLY (hue, saturation, brightness, warmth).
-Do NOT lighten, darken, or shift towards red/yellow unless present in the reference.
-Preserve room lighting/shadows by overlaying them on the CORRECT reference colour.
-Do NOT change white balance or colours outside the mask.
-OUTPUT REQUIREMENTS
-Replace ONLY the floor region with straight planks at true scale.
-Preserve original lighting, shadows, reflections and all occlusions from furniture/objects.
-Keep walls, skirting and all non-floor elements identical and sharp.
-Produce a seamless, photorealistic floor with natural joints and subtle bevels; avoid tiling artefacts.
-FAILURE MODES TO AVOID
-Do NOT edit outside the masked region.
-Do NOT introduce chevron/herringbone/panel patterns.
-Do NOT alter global colour/contrast of the room.
-Do NOT miniaturise or overscale planks relative to true scale.
 """
-
 
 def _part_from_bytes(data: bytes, mime_type: str) -> types.Part:
     return types.Part.from_bytes(mime_type=mime_type, data=data)
